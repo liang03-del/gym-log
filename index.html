@@ -80,6 +80,7 @@
   .addrow { display: flex; gap: 8px; }
   .addrow input { flex: 1; min-width: 0; }
   .addbtn { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .editrow input { flex: 1; min-width: 0; }
   .entry .when { font-weight: 400; color: var(--muted); font-size: 13px; }
   .set .n { color: var(--muted); font-size: 14px; text-align: center; font-variant-numeric: tabular-nums; }
   .sethead { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
@@ -194,7 +195,7 @@
     </div>
     <div class="card">
       <h2>Your exercises</h2>
-      <p class="hint" style="margin:0 0 8px">These are the choices in the Log dropdown. Removing one keeps the workouts you already logged.</p>
+      <p class="hint" style="margin:0 0 8px">These are the choices in the Log dropdown. Tap ✎ to fix a name; workouts already logged under it are updated too. Removing one keeps the workouts you already logged.</p>
       <div id="exlistview"></div>
     </div>
   </section>
@@ -220,6 +221,8 @@
   // exercises: the user's own list for the Log dropdown; null until they change it (a default list is shown).
   var state = { unit: 'kg', entries: [], exercises: null };
   var pendingEx = '', lastEx = '', returnToLog = false, exDoc = null;
+  // editingEx: the exercise being renamed; mergeArmed: the existing name a second Save will merge into.
+  var editingEx = null, mergeArmed = '';
   // mode: null while connecting, 'cloud' (saved to the account) or 'local' (this browser only)
   var mode = null, col = null, settingsDoc = null, downloads = null;
 
@@ -309,6 +312,7 @@
     var c = e && e.code;
     if (c === 'quota_exceeded') return 'Storage is full. Delete some old entries first.';
     if (c === 'invalid_argument') return "This account isn't allowed to save here.";
+    if (c === 'local') return 'This browser is blocking storage.';
     return 'Check your connection and try again.';
   }
 
@@ -643,12 +647,59 @@
   }
   function renderExerciseList() {
     var list = exerciseList().slice().sort(byName), counts = {};
+    var typed = $('renameex') ? $('renameex').value : null; // keep what's typed if the list redraws mid-edit
     state.entries.forEach(function (e) { counts[e.exercise] = (counts[e.exercise] || 0) + 1; });
     $('exlistview').innerHTML = list.length ? list.map(function (n) {
+      if (n === editingEx) {
+        return '<div class="entry editrow">' +
+          '<input id="renameex" maxlength="60" autocomplete="off" aria-label="New name for ' + esc(n) + '" value="' + esc(typed === null ? n : typed) + '">' +
+          '<button type="button" class="addbtn" data-saveex>Save</button>' +
+          '<button type="button" class="ghost" data-cancelex>Cancel</button></div>';
+      }
       return '<div class="entry"><div class="body"><div class="name">' + esc(n) + '</div>' +
         '<div class="sets">' + (counts[n] ? counts[n] + ' logged' : 'Not logged yet') + '</div></div>' +
+        '<button type="button" class="icon" data-editex="' + esc(n) + '" aria-label="Rename ' + esc(n) + '">✎</button>' +
         '<button type="button" class="icon" data-delex="' + esc(n) + '" aria-label="Remove ' + esc(n) + '">✕</button></div>';
     }).join('') : '<div class="empty">No exercises yet. Add one above.</div>';
+  }
+  // Point every logged entry for `old` at `name`.
+  function storeRename(old, name) {
+    var hit = state.entries.filter(function (e) { return e.exercise === old; });
+    if (mode === 'cloud') {
+      return hit.reduce(function (p, e) {
+        return p.then(function () { return col.doc(e.id).set(body(Object.assign({}, e, { exercise: name }))); });
+      }, Promise.resolve());
+    }
+    hit.forEach(function (e) { e.exercise = name; });
+    return saveLocal() ? Promise.resolve() : Promise.reject({ code: 'local' });
+  }
+  function renameExercise() {
+    var old = editingEx, name = $('renameex').value.trim().replace(/\s+/g, ' ');
+    if (!name) return say($('exmsg'), 'Type a name first.', false);
+    if (name === old) { editingEx = null; renderExerciseList(); return; }
+    var list = exerciseList();
+    var other = list.filter(function (n) { return n !== old && n.toLowerCase() === name.toLowerCase(); })[0];
+    // Renaming onto a name that already exists merges the two; ask for a second tap first.
+    if (other && mergeArmed !== other) {
+      mergeArmed = other;
+      return say($('exmsg'), other + ' is already in your list. Tap Save again to merge the logs of ' + old + ' into it.', false);
+    }
+    var target = other || name;
+    var newList = list.filter(function (n) { return n !== old; });
+    if (!other) newList.push(target);
+    var count = state.entries.filter(function (e) { return e.exercise === old; }).length;
+    Array.prototype.forEach.call($('exlistview').querySelectorAll('.editrow button'), function (b) { b.disabled = true; });
+    storeRename(old, target).then(function () { return storeExercises(newList); }).then(function () {
+      if ($('exercise').value === old) pendingEx = target;
+      editingEx = null; mergeArmed = '';
+      say($('exmsg'), (other ? 'Merged ' + old + ' into ' + target : 'Renamed ' + old + ' to ' + target) +
+        (count ? ' and updated ' + count + ' logged entr' + (count === 1 ? 'y' : 'ies') : '') + '.', true);
+      renderAll();
+      saveDraft();
+    }, function (e) {
+      Array.prototype.forEach.call($('exlistview').querySelectorAll('.editrow button'), function (b) { b.disabled = false; });
+      say($('exmsg'), "Couldn't rename. " + why(e), false);
+    });
   }
   function addExercise() {
     var name = $('newex').value.trim().replace(/\s+/g, ' ');
@@ -750,6 +801,25 @@
   };
   $('addex').onclick = addExercise;
   $('newex').onkeydown = function (ev) { if (ev.key === 'Enter') addExercise(); };
+  function cancelRename() { editingEx = null; mergeArmed = ''; say($('exmsg'), '', true); renderExerciseList(); }
+  $('exlistview').addEventListener('click', function (ev) {
+    var edit = ev.target.closest('[data-editex]');
+    if (edit) {
+      editingEx = edit.dataset.editex; mergeArmed = '';
+      say($('exmsg'), '', true);
+      renderExerciseList();
+      $('renameex').focus(); $('renameex').select();
+      return;
+    }
+    if (ev.target.closest('[data-cancelex]')) return cancelRename();
+    if (ev.target.closest('[data-saveex]')) renameExercise();
+  });
+  $('exlistview').addEventListener('keydown', function (ev) {
+    if (ev.target.id !== 'renameex') return;
+    if (ev.key === 'Enter') renameExercise();
+    if (ev.key === 'Escape') cancelRename();
+  });
+  $('exlistview').addEventListener('input', function () { mergeArmed = ''; });
   $('date').onchange = function () { renderSession(); showLastTime(); };
   $('pex').onchange = renderProgress;
   $('metric').onchange = renderProgress;
