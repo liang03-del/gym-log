@@ -1,7 +1,7 @@
 // Gym Log service worker: keeps the app files on the phone so it opens offline.
 // Serves the saved copy instantly, then refreshes it in the background,
 // so an updated version shows up the next time the app is opened.
-const CACHE = 'gymlog-app-v2';
+const CACHE = 'gymlog-app-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {

@@ -80,7 +80,17 @@
   .addrow { display: flex; gap: 8px; }
   .addrow input { flex: 1; min-width: 0; }
   .addbtn { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .editrow { flex-wrap: wrap; }
   .editrow input { flex: 1; min-width: 0; }
+  .editrow.full input { flex: 1 1 100%; }
+  .editrow select { flex: 1 1 120px; min-width: 0; width: auto; }
+  .grouphead { font: 600 12px/1.2 var(--body); color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.06em; margin: 16px 0 2px; }
+  .grouphead:first-child { margin-top: 0; }
+  .editbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px;
+    background: var(--field); border: 1px solid var(--accent); border-radius: 10px; padding: 6px 6px 6px 12px; margin-bottom: 12px; }
+  .editbar span { min-width: 0; overflow-wrap: anywhere; }
+  .entry.editing .name { color: var(--accent); }
   .entry .when { font-weight: 400; color: var(--muted); font-size: 13px; }
   .set .n { color: var(--muted); font-size: 14px; text-align: center; font-variant-numeric: tabular-nums; }
   .sethead { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
@@ -129,7 +139,11 @@
 <main>
   <section id="tab-log">
     <div class="card">
-      <h2>Log an exercise</h2>
+      <h2 id="logtitle">Log an exercise</h2>
+      <div class="editbar" id="editbar" hidden>
+        <span id="edittext"></span>
+        <button id="canceledit" type="button" class="ghost">Cancel</button>
+      </div>
       <div class="field"><label for="date">Date</label><input id="date" type="date"></div>
       <div class="field">
         <label for="exercise">Exercise</label>
@@ -191,11 +205,21 @@
         <input id="newex" placeholder="e.g. Cable Fly" autocomplete="off" maxlength="60" aria-label="Exercise name">
         <button id="addex" type="button" class="addbtn">Add</button>
       </div>
+      <div class="field" style="margin:10px 0 0"><label for="newexgroup">Group</label><select id="newexgroup"></select></div>
       <div class="msg" id="exmsg" role="status"></div>
     </div>
     <div class="card">
+      <h2>Groups</h2>
+      <div id="grouplist"></div>
+      <div class="addrow" style="margin-top:10px">
+        <input id="newgroup" placeholder="e.g. Glutes" autocomplete="off" maxlength="40" aria-label="New group name">
+        <button id="addgroup" type="button" class="addbtn">Add</button>
+      </div>
+      <div class="msg" id="gmsg" role="status"></div>
+    </div>
+    <div class="card">
       <h2>Your exercises</h2>
-      <p class="hint" style="margin:0 0 8px">These are the choices in the Log dropdown. Tap ✎ to fix a name; workouts already logged under it are updated too. Removing one keeps the workouts you already logged.</p>
+      <p class="hint" style="margin:0 0 8px">These are the choices in the Log dropdown. Tap ✎ to fix a name or move it to another group; workouts already logged under it are updated too. Removing one keeps the workouts you already logged.</p>
       <div id="exlistview"></div>
     </div>
   </section>
@@ -218,11 +242,22 @@
     'Tricep Pushdown', 'Lateral Raise', 'Leg Curl', 'Leg Extension', 'Hip Thrust'];
   var $ = function (id) { return document.getElementById(id); };
 
-  // exercises: the user's own list for the Log dropdown; null until they change it (a default list is shown).
-  var state = { unit: 'kg', entries: [], exercises: null };
+  // Starting muscle groups, used until the user changes any group or exercise.
+  var DEFAULT_GROUPS = [{ id: 'chest', name: 'Chest' }, { id: 'back', name: 'Back' }, { id: 'shoulders', name: 'Shoulders' },
+    { id: 'legs', name: 'Legs' }, { id: 'arms', name: 'Arms' }, { id: 'core', name: 'Core' }];
+  var DEFAULT_GROUP_OF = { 'Bench Press': 'chest', 'Incline Dumbbell Press': 'chest', 'Deadlift': 'back', 'Barbell Row': 'back',
+    'Pull-Up': 'back', 'Lat Pulldown': 'back', 'Overhead Press': 'shoulders', 'Lateral Raise': 'shoulders', 'Squat': 'legs',
+    'Leg Press': 'legs', 'Romanian Deadlift': 'legs', 'Leg Curl': 'legs', 'Leg Extension': 'legs', 'Hip Thrust': 'legs',
+    'Bicep Curl': 'arms', 'Tricep Pushdown': 'arms' };
+
+  // exercises: the user's own list for the Log dropdown; groups: [{id, name}]; groupOf: {exercise name: group id}.
+  // Each is null until the user changes it, and the defaults are shown meanwhile.
+  var state = { unit: 'kg', entries: [], exercises: null, groups: null, groupOf: null };
   var pendingEx = '', lastEx = '', returnToLog = false, exDoc = null;
   // editingEx: the exercise being renamed; mergeArmed: the existing name a second Save will merge into.
-  var editingEx = null, mergeArmed = '';
+  var editingEx = null, mergeArmed = '', editingGroup = null;
+  // editId: the logged entry loaded into the form for editing; stash: the unsaved form it replaced.
+  var editId = null, stash = null;
   // mode: null while connecting, 'cloud' (saved to the account) or 'local' (this browser only)
   var mode = null, col = null, settingsDoc = null, downloads = null;
 
@@ -306,6 +341,31 @@
     return out;
   }
   function byName(a, b) { return a.localeCompare(b); }
+  function groupList() { return state.groups || DEFAULT_GROUPS; }
+  function groupMap() { return state.groupOf || DEFAULT_GROUP_OF; }
+  function groupIdOf(name) {
+    var map = groupMap(), g = Object.prototype.hasOwnProperty.call(map, name) ? map[name] : '';
+    return groupList().some(function (x) { return x.id === g; }) ? g : '';
+  }
+  // Names bucketed by group, in group order, with "Other" last for exercises without a group.
+  function grouped(names) {
+    var buckets = {}, out = [];
+    names.forEach(function (n) { var g = groupIdOf(n); (buckets[g] = buckets[g] || []).push(n); });
+    groupList().forEach(function (g) { if (buckets[g.id]) out.push({ id: g.id, name: g.name, items: buckets[g.id].sort(byName) }); });
+    if (buckets['']) out.push({ id: '', name: 'Other', items: buckets[''].sort(byName) });
+    return out;
+  }
+  function optionsHtml(names) {
+    return grouped(names).map(function (g) {
+      return '<optgroup label="' + esc(g.name) + '">' +
+        g.items.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('') + '</optgroup>';
+    }).join('');
+  }
+  function groupSelectHtml(selected) {
+    return groupList().map(function (g) {
+      return '<option value="' + esc(g.id) + '"' + (g.id === selected ? ' selected' : '') + '>' + esc(g.name) + '</option>';
+    }).join('') + '<option value=""' + (selected === '' ? ' selected' : '') + '>Other (no group)</option>';
+  }
   function say(el, text, ok) { el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'err'); }
   function status(text, warn) { $('status').textContent = text; $('status').className = 'status' + (warn ? ' warn' : ''); }
   function why(e) {
@@ -337,12 +397,22 @@
     saveLocal();
     return Promise.resolve();
   }
-  function storeExercises(list) {
-    state.exercises = list;
-    if (mode === 'cloud') return exDoc.set({ names: list });
-    saveLocal();
-    return Promise.resolve();
+  function storeUpdate(entry) {
+    if (mode === 'cloud') return col.doc(entry.id).set(body(entry));
+    var i = state.entries.findIndex(function (x) { return x.id === entry.id; });
+    if (i < 0) state.entries.push(entry); else state.entries[i] = entry;
+    sortEntries();
+    return saveLocal() ? Promise.resolve() : Promise.reject({ code: 'local' });
   }
+  // Save the exercise list, groups and exercise-to-group map together; unchanged parts keep their current value.
+  function storeConfig(patch) {
+    state.exercises = patch.exercises || exerciseList().slice();
+    state.groups = patch.groups || groupList().slice();
+    state.groupOf = patch.groupOf || Object.assign({}, groupMap());
+    if (mode === 'cloud') return exDoc.set({ names: state.exercises, groups: state.groups, groupOf: state.groupOf });
+    return saveLocal() ? Promise.resolve() : Promise.reject({ code: 'local' });
+  }
+  function storeExercises(list) { return storeConfig({ exercises: list }); }
   function useLocal() {
     mode = 'local';
     try {
@@ -351,10 +421,17 @@
         state.unit = saved.unit === 'lb' ? 'lb' : 'kg';
         state.entries = saved.entries.filter(validEntry).map(function (e, i) { return clean(e, String(e.id || 'i' + i)); });
         if (Array.isArray(saved.exercises)) state.exercises = saved.exercises.filter(function (n) { return typeof n === 'string' && n.trim(); });
+        if (Array.isArray(saved.groups)) {
+          state.groups = saved.groups.filter(function (g) { return g && typeof g.id === 'string' && typeof g.name === 'string' && g.name.trim(); })
+            .map(function (g) { return { id: g.id, name: g.name }; });
+        }
+        if (saved.groupOf && typeof saved.groupOf === 'object' && !Array.isArray(saved.groupOf)) {
+          state.groupOf = {};
+          Object.keys(saved.groupOf).forEach(function (k) { if (typeof saved.groupOf[k] === 'string') state.groupOf[k] = saved.groupOf[k]; });
+        }
       }
     } catch (e) {}
     sortEntries();
-    ready();
   }
   // Data lives only on this phone, so the status line nags when a backup is missing or 14+ days old.
   var BKEY = 'gymlog.lastBackup';
@@ -369,7 +446,6 @@
   function ready() { $('save').disabled = false; $('unit').value = state.unit; renderAll(); }
 
   async function init() {
-    useLocal();
     // Ask Chrome to keep this site's storage even when the phone is low on space.
     try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
   }
@@ -413,7 +489,8 @@
     // or automatically the first time you change its weight or reps.
     done.onclick = function () { block.dataset.at = String(Date.now()); renumber(); };
     main.addEventListener('change', function () {
-      if (!block.dataset.at && readRow(main)) { block.dataset.at = String(Date.now()); renumber(); }
+      // Not while editing a past workout: "now" would be the wrong time for an old set.
+      if (!editId && !block.dataset.at && readRow(main)) { block.dataset.at = String(Date.now()); renumber(); }
     });
     btn.onclick = function () { addDrop(list).querySelector('input').focus(); };
     foot.appendChild(done); foot.appendChild(btn);
@@ -443,40 +520,91 @@
   // Live rest timer: time since the most recent timed set, in the form or saved today.
   function updateTimer() {
     var last = 0, td = today();
-    Array.prototype.forEach.call($('sets').children, function (b) { last = Math.max(last, +b.dataset.at || 0); });
+    if (!editId) Array.prototype.forEach.call($('sets').children, function (b) { last = Math.max(last, +b.dataset.at || 0); });
     state.entries.forEach(function (e) {
       if (e.date === td) e.sets.forEach(function (s) { if (s.at) last = Math.max(last, s.at); });
     });
     var gap = Date.now() - last;
     $('resttimer').textContent = last && gap >= 0 && gap < 3 * 3600000 ? 'Resting ' + fmtDur(gap) + ' since your last set' : '';
   }
+  function formState() {
+    return { date: $('date').value, exercise: $('exercise').value,
+      sets: Array.prototype.map.call($('sets').children, function (b) {
+        var rows = Array.prototype.map.call(b.querySelectorAll('.set'), function (row) {
+          var i = row.querySelectorAll('input');
+          return { w: i[0].value, r: i[1].value };
+        });
+        return { w: rows[0].w, r: rows[0].r, at: +b.dataset.at || 0, d: rows.slice(1) };
+      }) };
+  }
+  // Fill the form from a saved form state (a draft, a stash, or a logged entry); null gives an empty form for today.
+  function applyForm(d) {
+    $('date').value = d && typeof d.date === 'string' && d.date ? d.date : today();
+    pendingEx = String((d && d.exercise) || '');
+    $('sets').innerHTML = '';
+    var sets = d && Array.isArray(d.sets) && d.sets.length ? d.sets : [{}];
+    sets.forEach(function (s) {
+      s = s || {};
+      addSetRow(s.w, s.r, Array.isArray(s.d) ? s.d : [], typeof s.at === 'number' ? s.at : 0);
+    });
+    renderExerciseSelect();
+    renderEditMode();
+    renderSession();
+    showLastTime();
+  }
   function saveDraft() {
     if (!draftReady) return;
     try {
-      localStorage.setItem(DKEY, JSON.stringify({ date: $('date').value, exercise: $('exercise').value,
-        sets: Array.prototype.map.call($('sets').children, function (b) {
-          var rows = Array.prototype.map.call(b.querySelectorAll('.set'), function (row) {
-            var i = row.querySelectorAll('input');
-            return { w: i[0].value, r: i[1].value };
-          });
-          return { w: rows[0].w, r: rows[0].r, at: +b.dataset.at || 0, d: rows.slice(1) };
-        }) }));
+      var d = formState();
+      d.editId = editId;
+      d.stash = stash;
+      localStorage.setItem(DKEY, JSON.stringify(d));
     } catch (e) {}
   }
   function loadDraft() {
     var d;
     try { d = JSON.parse(localStorage.getItem(DKEY)); } catch (e) { return false; }
     if (!d || !Array.isArray(d.sets) || !d.sets.length) return false;
+    if (typeof d.editId === 'string' && state.entries.some(function (x) { return x.id === d.editId; })) {
+      editId = d.editId;
+      stash = d.stash && typeof d.stash === 'object' ? d.stash : null;
+      applyForm(d);
+      return true;
+    }
     var filled = d.exercise || d.sets.some(function (s) { return s && (s.w || s.r || s.at); });
     if (!filled) return false;
-    if (typeof d.date === 'string') $('date').value = d.date;
-    pendingEx = String(d.exercise || '');
-    $('sets').innerHTML = '';
-    d.sets.forEach(function (s) {
-      s = s || {};
-      addSetRow(s.w, s.r, Array.isArray(s.d) ? s.d : [], typeof s.at === 'number' ? s.at : 0);
-    });
+    applyForm(d);
     return true;
+  }
+  /* ---------- Editing a logged workout ---------- */
+  function renderEditMode() {
+    var e = editId && state.entries.filter(function (x) { return x.id === editId; })[0];
+    if (editId && !e) { editId = null; stash = null; }
+    $('editbar').hidden = !editId;
+    $('logtitle').textContent = editId ? 'Edit workout' : 'Log an exercise';
+    $('save').textContent = editId ? 'Save changes' : 'Save exercise';
+    if (e) $('edittext').textContent = 'Editing ' + e.exercise + ' from ' + fmtDate(e.date, true);
+  }
+  function startEdit(id) {
+    var e = state.entries.filter(function (x) { return x.id === id; })[0];
+    if (!e) return;
+    if (!editId) stash = formState(); // put the unsaved form aside; it comes back after Save or Cancel
+    editId = id;
+    applyForm({ date: e.date, exercise: e.exercise, sets: e.sets.map(function (s) {
+      return { w: String(s.w), r: String(s.r), at: s.at || 0,
+        d: (s.d || []).map(function (x) { return { w: String(x.w), r: String(x.r) }; }) };
+    }) });
+    say($('msg'), '', true);
+    showTab('log');
+    renderSession(); renderHistory();
+    saveDraft();
+  }
+  function finishEdit() {
+    editId = null;
+    var s = stash;
+    stash = null;
+    applyForm(s);
+    saveDraft();
   }
   // null = blank row, false = invalid, otherwise {w, r}
   function readRow(row) {
@@ -516,8 +644,19 @@
     if (bad) return say($('msg'), 'Each set and drop needs reps of 1 or more (weight can be 0 for bodyweight).', false);
     if (!sets.length) return say($('msg'), 'Add at least one set.', false);
     name = canonical(name);
-    var entry = { id: newId(), date: date, exercise: name, t: Date.now(), sets: sets };
     $('save').disabled = true;
+    if (editId) {
+      var orig = state.entries.filter(function (x) { return x.id === editId; })[0];
+      var upd = { id: editId, date: date, exercise: name, t: orig ? orig.t : Date.now(), sets: sets };
+      storeUpdate(upd).then(function () {
+        finishEdit();
+        say($('msg'), 'Updated ' + name + ' on ' + fmtDate(date, true) + '.', true);
+      }, function (e) {
+        say($('msg'), "Couldn't save changes. " + why(e), false);
+      }).then(function () { $('save').disabled = false; renderAll(); });
+      return;
+    }
+    var entry = { id: newId(), date: date, exercise: name, t: Date.now(), sets: sets };
     storeAdd(entry).then(function () {
       say($('msg'), 'Saved ' + name + '.', true);
       $('exercise').value = '';
@@ -532,9 +671,10 @@
 
   function entryHtml(e) {
     var first = e.sets.filter(function (s) { return s.at; })[0];
-    return '<div class="entry"><div class="body"><div class="name">' + esc(e.exercise) +
+    return '<div class="entry' + (e.id === editId ? ' editing' : '') + '"><div class="body"><div class="name">' + esc(e.exercise) +
       (first ? '<span class="when"> · ' + esc(fmtClock(first.at)) + '</span>' : '') + '</div>' +
       '<div class="sets">' + esc(setsText(e.sets, true)) + ' ' + state.unit + '</div></div>' +
+      '<button type="button" class="icon" data-edit="' + esc(e.id) + '" aria-label="Edit ' + esc(e.exercise) + '">✎</button>' +
       '<button type="button" class="icon" data-del="' + esc(e.id) + '" aria-label="Delete ' + esc(e.exercise) + '">✕</button></div>';
   }
   function renderSession() {
@@ -602,7 +742,7 @@
   }
   function renderProgress() {
     var names = exerciseNames(), sel = $('pex'), cur = sel.value;
-    sel.innerHTML = names.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('');
+    sel.innerHTML = optionsHtml(names);
     if (names.indexOf(cur) >= 0) sel.value = cur;
     var pts = names.length ? sessionsFor(sel.value) : [];
     var key = $('metric').value;
@@ -638,29 +778,91 @@
     pendingEx = '';
     var list = exerciseList().slice();
     if (cur && cur !== '__add' && list.indexOf(cur) < 0) list.push(cur);
-    list.sort(byName);
-    sel.innerHTML = '<option value="">Choose an exercise</option>' +
-      list.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('') +
+    sel.innerHTML = '<option value="">Choose an exercise</option>' + optionsHtml(list) +
       '<option value="__add">+ Add a new exercise…</option>';
     sel.value = cur && cur !== '__add' ? cur : '';
     lastEx = sel.value;
   }
   function renderExerciseList() {
-    var list = exerciseList().slice().sort(byName), counts = {};
-    var typed = $('renameex') ? $('renameex').value : null; // keep what's typed if the list redraws mid-edit
+    var list = exerciseList().slice(), counts = {};
+    // keep what's typed or picked if the list redraws mid-edit
+    var typed = $('renameex') ? $('renameex').value : null;
+    var typedGroup = $('renameexgroup') ? $('renameexgroup').value : null;
     state.entries.forEach(function (e) { counts[e.exercise] = (counts[e.exercise] || 0) + 1; });
-    $('exlistview').innerHTML = list.length ? list.map(function (n) {
-      if (n === editingEx) {
-        return '<div class="entry editrow">' +
-          '<input id="renameex" maxlength="60" autocomplete="off" aria-label="New name for ' + esc(n) + '" value="' + esc(typed === null ? n : typed) + '">' +
-          '<button type="button" class="addbtn" data-saveex>Save</button>' +
-          '<button type="button" class="ghost" data-cancelex>Cancel</button></div>';
-      }
-      return '<div class="entry"><div class="body"><div class="name">' + esc(n) + '</div>' +
-        '<div class="sets">' + (counts[n] ? counts[n] + ' logged' : 'Not logged yet') + '</div></div>' +
-        '<button type="button" class="icon" data-editex="' + esc(n) + '" aria-label="Rename ' + esc(n) + '">✎</button>' +
-        '<button type="button" class="icon" data-delex="' + esc(n) + '" aria-label="Remove ' + esc(n) + '">✕</button></div>';
+    $('exlistview').innerHTML = list.length ? grouped(list).map(function (g) {
+      return '<h3 class="grouphead">' + esc(g.name) + '</h3>' + g.items.map(function (n) {
+        if (n === editingEx) {
+          return '<div class="entry editrow full">' +
+            '<input id="renameex" maxlength="60" autocomplete="off" aria-label="New name for ' + esc(n) + '" value="' + esc(typed === null ? n : typed) + '">' +
+            '<select id="renameexgroup" aria-label="Group for ' + esc(n) + '">' + groupSelectHtml(typedGroup === null ? groupIdOf(n) : typedGroup) + '</select>' +
+            '<button type="button" class="addbtn" data-saveex>Save</button>' +
+            '<button type="button" class="ghost" data-cancelex>Cancel</button></div>';
+        }
+        return '<div class="entry"><div class="body"><div class="name">' + esc(n) + '</div>' +
+          '<div class="sets">' + (counts[n] ? counts[n] + ' logged' : 'Not logged yet') + '</div></div>' +
+          '<button type="button" class="icon" data-editex="' + esc(n) + '" aria-label="Edit ' + esc(n) + '">✎</button>' +
+          '<button type="button" class="icon" data-delex="' + esc(n) + '" aria-label="Remove ' + esc(n) + '">✕</button></div>';
+      }).join('');
     }).join('') : '<div class="empty">No exercises yet. Add one above.</div>';
+    var ng = $('newexgroup');
+    ng.innerHTML = groupSelectHtml(ng.value);
+  }
+  function renderGroupList() {
+    var counts = {};
+    exerciseList().forEach(function (n) { var g = groupIdOf(n); counts[g] = (counts[g] || 0) + 1; });
+    var typed = $('renamegroup') ? $('renamegroup').value : null;
+    $('grouplist').innerHTML = groupList().length ? groupList().map(function (g) {
+      if (g.id === editingGroup) {
+        return '<div class="entry editrow">' +
+          '<input id="renamegroup" maxlength="40" autocomplete="off" aria-label="New name for ' + esc(g.name) + '" value="' + esc(typed === null ? g.name : typed) + '">' +
+          '<button type="button" class="addbtn" data-savegroup>Save</button>' +
+          '<button type="button" class="ghost" data-cancelgroup>Cancel</button></div>';
+      }
+      var c = counts[g.id] || 0;
+      return '<div class="entry"><div class="body"><div class="name">' + esc(g.name) + '</div>' +
+        '<div class="sets">' + (c ? c + ' exercise' + (c === 1 ? '' : 's') : 'No exercises yet') + '</div></div>' +
+        '<button type="button" class="icon" data-editgroup="' + esc(g.id) + '" aria-label="Rename ' + esc(g.name) + '">✎</button>' +
+        '<button type="button" class="icon" data-delgroup="' + esc(g.id) + '" aria-label="Delete ' + esc(g.name) + '">✕</button></div>';
+    }).join('') : '<div class="empty">No groups yet. Add one below.</div>';
+  }
+  function groupNameError(name, exceptId) {
+    if (!name) return 'Type a group name first.';
+    if (name.toLowerCase() === 'other') return '"Other" is used for exercises without a group. Pick another name.';
+    var dup = groupList().filter(function (g) { return g.id !== exceptId && g.name.toLowerCase() === name.toLowerCase(); })[0];
+    return dup ? dup.name + ' already exists.' : '';
+  }
+  function addGroup() {
+    var name = $('newgroup').value.trim().replace(/\s+/g, ' ');
+    var err = groupNameError(name, null);
+    if (err) return say($('gmsg'), err, false);
+    storeConfig({ groups: groupList().concat([{ id: 'g' + newId(), name: name }]) }).then(function () {
+      $('newgroup').value = '';
+      say($('gmsg'), 'Added ' + name + '. Pick it when you add or edit an exercise.', true);
+      renderAll();
+    }, function (e) { say($('gmsg'), "Couldn't add. " + why(e), false); });
+  }
+  function renameGroup() {
+    var g = groupList().filter(function (x) { return x.id === editingGroup; })[0];
+    if (!g) { editingGroup = null; return renderGroupList(); }
+    var name = $('renamegroup').value.trim().replace(/\s+/g, ' ');
+    if (name === g.name) { editingGroup = null; return renderGroupList(); }
+    var err = groupNameError(name, g.id);
+    if (err) return say($('gmsg'), err, false);
+    storeConfig({ groups: groupList().map(function (x) { return x.id === g.id ? { id: x.id, name: name } : x; }) }).then(function () {
+      editingGroup = null;
+      say($('gmsg'), 'Renamed ' + g.name + ' to ' + name + '.', true);
+      renderAll();
+    }, function (e) { say($('gmsg'), "Couldn't rename. " + why(e), false); });
+  }
+  function deleteGroup(id) {
+    var g = groupList().filter(function (x) { return x.id === id; })[0];
+    if (!g) return Promise.resolve();
+    var map = Object.assign({}, groupMap());
+    Object.keys(map).forEach(function (n) { if (map[n] === id) delete map[n]; });
+    return storeConfig({ groups: groupList().filter(function (x) { return x.id !== id; }), groupOf: map }).then(function () {
+      say($('gmsg'), 'Deleted ' + g.name + '. Its exercises are now under Other.', true);
+      renderAll();
+    });
   }
   // Point every logged entry for `old` at `name`.
   function storeRename(old, name) {
@@ -675,8 +877,20 @@
   }
   function renameExercise() {
     var old = editingEx, name = $('renameex').value.trim().replace(/\s+/g, ' ');
+    var gid = $('renameexgroup').value;
     if (!name) return say($('exmsg'), 'Type a name first.', false);
-    if (name === old) { editingEx = null; renderExerciseList(); return; }
+    var map = Object.assign({}, groupMap());
+    if (name === old) {
+      // Only the group may have changed.
+      if (gid === groupIdOf(old)) { editingEx = null; renderExerciseList(); return; }
+      if (gid) map[old] = gid; else delete map[old];
+      storeConfig({ groupOf: map }).then(function () {
+        editingEx = null;
+        say($('exmsg'), 'Moved ' + old + ' to ' + (gid ? groupList().filter(function (g) { return g.id === gid; })[0].name : 'Other') + '.', true);
+        renderAll();
+      }, function (e) { say($('exmsg'), "Couldn't save. " + why(e), false); });
+      return;
+    }
     var list = exerciseList();
     var other = list.filter(function (n) { return n !== old && n.toLowerCase() === name.toLowerCase(); })[0];
     // Renaming onto a name that already exists merges the two; ask for a second tap first.
@@ -687,9 +901,12 @@
     var target = other || name;
     var newList = list.filter(function (n) { return n !== old; });
     if (!other) newList.push(target);
+    // A merge keeps the existing exercise's group; a plain rename takes the group picked here.
+    delete map[old];
+    if (!other) { if (gid) map[target] = gid; else delete map[target]; }
     var count = state.entries.filter(function (e) { return e.exercise === old; }).length;
     Array.prototype.forEach.call($('exlistview').querySelectorAll('.editrow button'), function (b) { b.disabled = true; });
-    storeRename(old, target).then(function () { return storeExercises(newList); }).then(function () {
+    storeRename(old, target).then(function () { return storeConfig({ exercises: newList, groupOf: map }); }).then(function () {
       if ($('exercise').value === old) pendingEx = target;
       editingEx = null; mergeArmed = '';
       say($('exmsg'), (other ? 'Merged ' + old + ' into ' + target : 'Renamed ' + old + ' to ' + target) +
@@ -708,7 +925,9 @@
     var dup = list.filter(function (n) { return n.toLowerCase() === name.toLowerCase(); })[0];
     if (dup) return say($('exmsg'), dup + ' is already in your list.', false);
     $('addex').disabled = true;
-    storeExercises(list.concat([name])).then(function () {
+    var map = Object.assign({}, groupMap()), gid = $('newexgroup').value;
+    if (gid) map[name] = gid; else delete map[name];
+    storeConfig({ exercises: list.concat([name]), groupOf: map }).then(function () {
       $('newex').value = '';
       if (returnToLog) {
         returnToLog = false;
@@ -728,7 +947,9 @@
 
   function renderAll() {
     renderExerciseSelect();
+    renderEditMode();
     renderExerciseList();
+    renderGroupList();
     Array.prototype.forEach.call(document.querySelectorAll('.u'), function (el) { el.textContent = state.unit; });
     renderSession(); renderHistory(); renderProgress(); showLastTime();
     if (mode) backupStatus();
@@ -750,22 +971,36 @@
   };
   // Delete takes two taps: the first arms the button, the second removes the entry.
   document.querySelector('main').addEventListener('click', function (ev) {
-    var b = ev.target.closest('[data-del],[data-delex]'); if (!b) return;
+    var ed = ev.target.closest('[data-edit]');
+    if (ed) return startEdit(ed.dataset.edit);
+    var b = ev.target.closest('[data-del],[data-delex],[data-delgroup]'); if (!b) return;
     if (!b.classList.contains('armed')) {
       b.classList.add('armed'); b.textContent = 'Delete?';
       setTimeout(function () { if (b.isConnected) { b.classList.remove('armed'); b.textContent = '✕'; } }, 4000);
       return;
     }
     b.disabled = true;
+    if (b.hasAttribute('data-delgroup')) {
+      deleteGroup(b.dataset.delgroup).catch(function (e) {
+        b.disabled = false;
+        say($('gmsg'), "Couldn't delete. " + why(e), false);
+      });
+      return;
+    }
     if (b.hasAttribute('data-delex')) {
-      var gone = b.dataset.delex;
-      storeExercises(exerciseList().filter(function (n) { return n !== gone; })).then(renderAll, function (e) {
+      var gone = b.dataset.delex, map = Object.assign({}, groupMap());
+      delete map[gone];
+      storeConfig({ exercises: exerciseList().filter(function (n) { return n !== gone; }), groupOf: map }).then(renderAll, function (e) {
         b.disabled = false;
         say($('exmsg'), "Couldn't remove. " + why(e), false);
       });
       return;
     }
-    storeRemove(b.dataset.del).then(renderAll, function (e) {
+    var delId = b.dataset.del;
+    storeRemove(delId).then(function () {
+      if (delId === editId) finishEdit();
+      renderAll();
+    }, function (e) {
       b.disabled = false;
       say($('msg'), "Couldn't delete. " + why(e), false); say($('bmsg'), "Couldn't delete. " + why(e), false);
     });
@@ -820,6 +1055,27 @@
     if (ev.key === 'Escape') cancelRename();
   });
   $('exlistview').addEventListener('input', function () { mergeArmed = ''; });
+  $('canceledit').onclick = function () { finishEdit(); say($('msg'), '', true); renderAll(); };
+  $('addgroup').onclick = addGroup;
+  $('newgroup').onkeydown = function (ev) { if (ev.key === 'Enter') addGroup(); };
+  function cancelGroupRename() { editingGroup = null; say($('gmsg'), '', true); renderGroupList(); }
+  $('grouplist').addEventListener('click', function (ev) {
+    var edit = ev.target.closest('[data-editgroup]');
+    if (edit) {
+      editingGroup = edit.dataset.editgroup;
+      say($('gmsg'), '', true);
+      renderGroupList();
+      $('renamegroup').focus(); $('renamegroup').select();
+      return;
+    }
+    if (ev.target.closest('[data-cancelgroup]')) return cancelGroupRename();
+    if (ev.target.closest('[data-savegroup]')) renameGroup();
+  });
+  $('grouplist').addEventListener('keydown', function (ev) {
+    if (ev.target.id !== 'renamegroup') return;
+    if (ev.key === 'Enter') renameGroup();
+    if (ev.key === 'Escape') cancelGroupRename();
+  });
   $('date').onchange = function () { renderSession(); showLastTime(); };
   $('pex').onchange = renderProgress;
   $('metric').onchange = renderProgress;
@@ -829,7 +1085,8 @@
   };
 
   $('export').onclick = function () {
-    var data = JSON.stringify({ unit: state.unit, exercises: exerciseList(), entries: state.entries }, null, 2);
+    var data = JSON.stringify({ unit: state.unit, exercises: exerciseList(), groups: groupList(), groupOf: groupMap(),
+      entries: state.entries }, null, 2);
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
     a.download = 'gym-log-' + today() + '.json';
@@ -847,19 +1104,36 @@
     var reader = new FileReader();
     reader.onload = async function () {
       $('file').value = '';
-      var list, fileEx = [];
+      var list, fileEx = [], fileGroups = [], fileGroupOf = {};
       try {
         var data = JSON.parse(reader.result);
         if (!data || !Array.isArray(data.entries) || !data.entries.every(validEntry)) throw new Error('bad');
         list = data.entries;
         if (Array.isArray(data.exercises)) fileEx = data.exercises.filter(function (n) { return typeof n === 'string' && n.trim(); });
+        if (Array.isArray(data.groups)) {
+          fileGroups = data.groups.filter(function (g) { return g && typeof g.id === 'string' && typeof g.name === 'string' && g.name.trim(); });
+        }
+        if (data.groupOf && typeof data.groupOf === 'object' && !Array.isArray(data.groupOf)) fileGroupOf = data.groupOf;
       } catch (e) { return say($('bmsg'), "That file isn't a Gym Log export.", false); }
-      // Bring over the file's exercise list too, adding names this phone doesn't have yet.
-      if (fileEx.length) {
+      // Bring over the file's exercises and groups too, adding what this phone doesn't have yet.
+      if (fileEx.length || fileGroups.length) {
         var mine = exerciseList().slice(), seen = {};
         mine.forEach(function (n) { seen[n.toLowerCase()] = 1; });
         fileEx.forEach(function (n) { if (!seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; mine.push(n); } });
-        storeExercises(mine);
+        var groups = groupList().slice(), map = Object.assign({}, groupMap()), idFor = {};
+        fileGroups.forEach(function (fg) {
+          var hit = groups.filter(function (g) { return g.name.toLowerCase() === fg.name.toLowerCase(); })[0];
+          if (!hit) {
+            hit = { id: groups.some(function (g) { return g.id === fg.id; }) ? 'g' + newId() : fg.id, name: fg.name };
+            groups.push(hit);
+          }
+          idFor[fg.id] = hit.id;
+        });
+        Object.keys(fileGroupOf).forEach(function (n) {
+          var fid = fileGroupOf[n];
+          if (!Object.prototype.hasOwnProperty.call(map, n) && typeof fid === 'string' && idFor[fid]) map[n] = idFor[fid];
+        });
+        storeConfig({ exercises: mine, groups: groups, groupOf: map });
       }
       // Import adds to what is here; entries already present (same id) are skipped.
       var have = {};
@@ -887,8 +1161,9 @@
 
   /* ---------- Init ---------- */
   $('date').value = today();
+  useLocal(); // load saved workouts first, so a draft that was editing one can find it
   if (!loadDraft()) resetSets();
-  renderAll();
+  ready();
   draftReady = true;
   saveDraft();
   init();
