@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5fd6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Gym Log</title>
+<style>
+  /* Layout: one narrow column of cards, thumb-reach tab bar fixed to the bottom edge. */
+  :root {
+    --bg: #eef0f4; --card: #ffffff; --text: #14171f; --muted: #626b7c;
+    --line: #dde1e9; --accent: #1f5fd6; --accent-text: #ffffff;
+    --danger: #c62828; --good: #18794e; --warn: #9a5b00; --field: #f6f7fa;
+    --body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --display: "Space Grotesk", "Inter", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1116; --card: #181c24; --text: #e9ecf2; --muted: #98a1b2;
+      --line: #2a303b; --accent: #6b9bf5; --accent-text: #0e1116;
+      --danger: #ff8a80; --good: #5fd39a; --warn: #f0b860; --field: #11141a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --card: #181c24; --text: #e9ecf2; --muted: #98a1b2;
+    --line: #2a303b; --accent: #6b9bf5; --accent-text: #0e1116;
+    --danger: #ff8a80; --good: #5fd39a; --warn: #f0b860; --field: #11141a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.45 var(--body);
+    margin: 0;
+    padding-block: env(safe-area-inset-top, 0px) 84px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .top, main { max-width: 640px; margin: 0 auto; }
+  .top { padding: 18px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { font: 700 24px/1.1 var(--display); margin: 0; letter-spacing: -0.01em; }
+  .status { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .status.warn { color: var(--warn); }
+  h2 { font: 600 13px/1.2 var(--body); margin: 0 0 12px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em; }
+  main { display: flex; flex-direction: column; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px; margin-bottom: 14px; min-width: 0; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, select {
+    width: 100%; font: inherit; color: var(--text); background: var(--field);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; cursor: pointer; border-radius: 10px; min-height: 44px;
+    border: 1px solid var(--line); background: var(--field); color: var(--text); padding: 8px 14px; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+    font-weight: 600; width: 100%; }
+  button.ghost { background: transparent; }
+  button.icon { min-width: 44px; padding: 0 10px; color: var(--muted); white-space: nowrap; }
+  button.icon.armed { color: var(--danger); border-color: var(--danger); font-size: 14px; font-weight: 600; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 140px; min-width: 0; }
+  .field { margin-bottom: 12px; }
+  .set, .sethead { display: grid; grid-template-columns: 28px 1fr 1fr 44px; gap: 8px; align-items: center; }
+  .setblock { margin-bottom: 12px; }
+  .set { margin-bottom: 6px; }
+  .set.drop .n { color: var(--accent); font-weight: 600; }
+  .setfoot { display: flex; flex-wrap: wrap; gap: 8px; margin-left: 36px; }
+  .dropbtn, .donebtn { min-height: 34px; padding: 4px 10px; font-size: 13px; font-variant-numeric: tabular-nums;
+    color: var(--accent); background: transparent; border: 1px dashed var(--line); }
+  .donebtn.stamped { color: var(--good); border-style: solid; }
+  .resttimer { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 20px; margin-bottom: 6px; }
+  .addrow { display: flex; gap: 8px; }
+  .addrow input { flex: 1; min-width: 0; }
+  .addbtn { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .entry .when { font-weight: 400; color: var(--muted); font-size: 13px; }
+  .set .n { color: var(--muted); font-size: 14px; text-align: center; font-variant-numeric: tabular-nums; }
+  .sethead { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .hint { font-size: 14px; color: var(--muted); margin: -4px 0 12px; overflow-wrap: anywhere; }
+  .msg { font-size: 14px; min-height: 20px; margin-top: 8px; }
+  .msg.ok { color: var(--good); } .msg.err { color: var(--danger); }
+  .entry { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .entry:first-of-type { border-top: 0; }
+  .entry .body { flex: 1; min-width: 0; }
+  .entry .name { font-weight: 600; overflow-wrap: anywhere; }
+  .entry .sets { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .day { font: 500 16px/1.3 var(--display); margin-bottom: 4px; }
+  .empty { color: var(--muted); font-size: 15px; padding: 6px 0; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+  .tile { background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-width: 0; }
+  .tile .v { font: 700 20px/1.2 var(--display); font-variant-numeric: tabular-nums; }
+  .tile .k { font-size: 12px; color: var(--muted); }
+  svg { width: 100%; height: auto; display: block; }
+  svg text { fill: var(--muted); font-size: 12px; font-family: var(--body); }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 4px; border-top: 1px solid var(--line); }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; border-top: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card);
+    border-top: 1px solid var(--line); display: flex; justify-content: center;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  nav button { flex: 1; max-width: 160px; font-size: 15px; border: 0; border-radius: 0; background: transparent;
+    min-height: 58px; color: var(--muted); font-weight: 600; }
+  nav button[aria-selected="true"] { color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+  .unit { width: auto; min-height: 36px; padding: 4px 8px; font-size: 14px; flex: none; }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div>
+    <h1>Gym Log</h1>
+    <div class="status" id="status" role="status">Loading…</div>
+  </div>
+  <select id="unit" class="unit" aria-label="Weight unit"><option>kg</option><option>lb</option></select>
+</div>
+
+<main>
+  <section id="tab-log">
+    <div class="card">
+      <h2>Log an exercise</h2>
+      <div class="field"><label for="date">Date</label><input id="date" type="date"></div>
+      <div class="field">
+        <label for="exercise">Exercise</label>
+        <select id="exercise"></select>
+      </div>
+      <div class="hint" id="lasttime"></div>
+      <div class="sethead"><span></span><span>Weight (<span class="u">kg</span>)</span><span>Reps</span><span></span></div>
+      <div id="sets"></div>
+      <div class="resttimer" id="resttimer"></div>
+      <button id="addset" class="ghost" type="button">+ Add set</button>
+      <div style="margin-top:12px"><button id="save" class="primary" type="button" disabled>Save exercise</button></div>
+      <div class="msg" id="msg" role="status"></div>
+    </div>
+    <div class="card">
+      <h2 id="sessiontitle">Today's session</h2>
+      <div id="session"></div>
+    </div>
+  </section>
+
+  <section id="tab-history" hidden>
+    <div id="history"></div>
+    <div class="card">
+      <h2>Backup</h2>
+      <div class="row">
+        <button id="export" type="button">Export to a file</button>
+        <button id="import" type="button">Import from a file</button>
+      </div>
+      <input id="file" type="file" accept="application/json,.json" hidden>
+      <div class="msg" id="bmsg" role="status"></div>
+    </div>
+  </section>
+
+  <section id="tab-progress" hidden>
+    <div class="card">
+      <h2>Progress</h2>
+      <div class="row">
+        <div><label for="pex">Exercise</label><select id="pex"></select></div>
+        <div><label for="metric">Show</label>
+          <select id="metric">
+            <option value="top">Top weight</option>
+            <option value="orm">Estimated 1RM</option>
+            <option value="vol">Total volume</option>
+          </select>
+        </div>
+      </div>
+      <div class="tiles" id="tiles"></div>
+      <div id="chart"></div>
+    </div>
+    <div class="card">
+      <h2>Personal records</h2>
+      <div class="tablewrap" id="prs"></div>
+    </div>
+  </section>
+
+  <section id="tab-exercises" hidden>
+    <div class="card">
+      <h2>Add an exercise</h2>
+      <div class="addrow">
+        <input id="newex" placeholder="e.g. Cable Fly" autocomplete="off" maxlength="60" aria-label="Exercise name">
+        <button id="addex" type="button" class="addbtn">Add</button>
+      </div>
+      <div class="msg" id="exmsg" role="status"></div>
+    </div>
+    <div class="card">
+      <h2>Your exercises</h2>
+      <p class="hint" style="margin:0 0 8px">These are the choices in the Log dropdown. Removing one keeps the workouts you already logged.</p>
+      <div id="exlistview"></div>
+    </div>
+  </section>
+</main>
+
+<nav role="tablist">
+  <button role="tab" id="nav-log" data-tab="log" aria-selected="true">Log</button>
+  <button role="tab" id="nav-history" data-tab="history" aria-selected="false">History</button>
+  <button role="tab" id="nav-progress" data-tab="progress" aria-selected="false">Progress</button>
+  <button role="tab" id="nav-exercises" data-tab="exercises" aria-selected="false">Exercises</button>
+</nav>
+
+<script>
+(function () {
+  var KEY = 'gymlog.v1';
+  // The unsaved form is kept in this browser so a reload mid-workout doesn't lose sets or their times.
+  var DKEY = 'gymlog.draft', draftReady = false;
+  var COMMON = ['Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-Up',
+    'Lat Pulldown', 'Incline Dumbbell Press', 'Leg Press', 'Romanian Deadlift', 'Bicep Curl',
+    'Tricep Pushdown', 'Lateral Raise', 'Leg Curl', 'Leg Extension', 'Hip Thrust'];
+  var $ = function (id) { return document.getElementById(id); };
+
+  // exercises: the user's own list for the Log dropdown; null until they change it (a default list is shown).
+  var state = { unit: 'kg', entries: [], exercises: null };
+  var pendingEx = '', lastEx = '', returnToLog = false, exDoc = null;
+  // mode: null while connecting, 'cloud' (saved to the account) or 'local' (this browser only)
+  var mode = null, col = null, settingsDoc = null, downloads = null;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function fmtDate(iso, short) {
+    var p = iso.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    return d.toLocaleDateString(undefined, short ? { month: 'short', day: 'numeric' }
+      : { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  function num(n) { return (Math.round(n * 10) / 10).toLocaleString(); }
+  function fmtClock(ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  function fmtDur(ms) {
+    var s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return (h ? h + ':' + pad(m) : m) + ':' + pad(sec);
+  }
+  // withRest: put the rest between two timed sets in place of the comma.
+  function setsText(sets, withRest) {
+    var out = '';
+    sets.forEach(function (s, i) {
+      if (i) {
+        var prev = sets[i - 1];
+        out += (withRest && s.at && prev.at && s.at >= prev.at) ? ' · rest ' + fmtDur(s.at - prev.at) + ' · ' : ', ';
+      }
+      out += segs(s).map(function (x) { return num(x.w) + '×' + x.r; }).join(' → ');
+    });
+    return out;
+  }
+  function orm(s) { return s.r <= 1 ? s.w : s.w * (1 + s.r / 30); }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  // A set is {w, r} plus an optional d: [{w, r}, ...] for drop-set segments done straight after it.
+  function validSeg(s) { return s && typeof s.w === 'number' && s.w >= 0 && typeof s.r === 'number' && s.r >= 1; }
+  function validEntry(e) {
+    return e && typeof e.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date) &&
+      typeof e.exercise === 'string' && e.exercise.trim() !== '' && Array.isArray(e.sets) && e.sets.length > 0 &&
+      e.sets.every(function (s) {
+        return validSeg(s) && (s.d === undefined || (Array.isArray(s.d) && s.d.every(validSeg))) &&
+          (s.at === undefined || typeof s.at === 'number');
+      });
+  }
+  function clean(e, id) {
+    return { id: id, date: e.date, exercise: e.exercise, t: typeof e.t === 'number' ? e.t : 0,
+      sets: e.sets.map(function (s) {
+        var o = { w: s.w, r: s.r };
+        if (s.d && s.d.length) o.d = s.d.map(function (x) { return { w: x.w, r: x.r }; });
+        if (typeof s.at === 'number' && s.at > 0) o.at = s.at;
+        return o;
+      }) };
+  }
+  function segs(s) { return [{ w: s.w, r: s.r }].concat(s.d || []); }
+  function body(e) { return { date: e.date, exercise: e.exercise, t: e.t, sets: e.sets }; }
+  function sortEntries() { state.entries.sort(function (a, b) { return a.t - b.t; }); }
+  function exerciseNames() {
+    var seen = {};
+    state.entries.forEach(function (e) { seen[e.exercise] = 1; });
+    return Object.keys(seen).sort(function (a, b) { return a.localeCompare(b); });
+  }
+  // Match a typed name to an existing one regardless of case, so "bench press" and "Bench Press" stay one exercise.
+  function canonical(name) {
+    var lower = name.toLowerCase();
+    var all = exerciseNames().concat(exerciseList());
+    for (var i = 0; i < all.length; i++) if (all[i].toLowerCase() === lower) return all[i];
+    return name;
+  }
+  function exerciseList() {
+    if (state.exercises) return state.exercises;
+    var seen = {}, out = [];
+    exerciseNames().concat(COMMON).forEach(function (n) {
+      var k = n.toLowerCase();
+      if (!seen[k]) { seen[k] = 1; out.push(n); }
+    });
+    return out;
+  }
+  function byName(a, b) { return a.localeCompare(b); }
+  function say(el, text, ok) { el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'err'); }
+  function status(text, warn) { $('status').textContent = text; $('status').className = 'status' + (warn ? ' warn' : ''); }
+  function why(e) {
+    var c = e && e.code;
+    if (c === 'quota_exceeded') return 'Storage is full. Delete some old entries first.';
+    if (c === 'invalid_argument') return "This account isn't allowed to save here.";
+    return 'Check your connection and try again.';
+  }
+
+  /* ---------- Storage ---------- */
+  function saveLocal() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); return true; } catch (e) { return false; }
+  }
+  function storeAdd(entry) {
+    if (mode === 'cloud') return col.doc(entry.id).set(body(entry));
+    state.entries.push(entry);
+    return saveLocal() ? Promise.resolve() : Promise.reject({ code: 'local' });
+  }
+  function storeRemove(id) {
+    if (mode === 'cloud') return col.doc(id).delete();
+    state.entries = state.entries.filter(function (x) { return x.id !== id; });
+    saveLocal();
+    return Promise.resolve();
+  }
+  function storeUnit(u) {
+    state.unit = u;
+    if (mode === 'cloud') return settingsDoc.set({ unit: u });
+    saveLocal();
+    return Promise.resolve();
+  }
+  function storeExercises(list) {
+    state.exercises = list;
+    if (mode === 'cloud') return exDoc.set({ names: list });
+    saveLocal();
+    return Promise.resolve();
+  }
+  function useLocal() {
+    mode = 'local';
+    try {
+      var saved = JSON.parse(localStorage.getItem(KEY));
+      if (saved && Array.isArray(saved.entries)) {
+        state.unit = saved.unit === 'lb' ? 'lb' : 'kg';
+        state.entries = saved.entries.filter(validEntry).map(function (e, i) { return clean(e, String(e.id || 'i' + i)); });
+        if (Array.isArray(saved.exercises)) state.exercises = saved.exercises.filter(function (n) { return typeof n === 'string' && n.trim(); });
+      }
+    } catch (e) {}
+    sortEntries();
+    ready();
+  }
+  // Data lives only on this phone, so the status line nags when a backup is missing or 14+ days old.
+  var BKEY = 'gymlog.lastBackup';
+  function backupStatus() {
+    var last = 0;
+    try { last = +localStorage.getItem(BKEY) || 0; } catch (e) {}
+    if (!state.entries.length) return status('Saved on this phone. Works offline.');
+    if (!last) return status('Saved on this phone only. Export a backup in History.', true);
+    var days = Math.floor((Date.now() - last) / 86400000);
+    status('Saved on this phone · last backup ' + (days <= 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's') + ' ago'), days >= 14);
+  }
+  function ready() { $('save').disabled = false; $('unit').value = state.unit; renderAll(); }
+
+  async function init() {
+    useLocal();
+    // Ask Chrome to keep this site's storage even when the phone is low on space.
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+  }
+
+  /* ---------- Log tab ---------- */
+  function makeRow(isDrop, w, r) {
+    var div = document.createElement('div');
+    div.className = 'set' + (isDrop ? ' drop' : '');
+    div.innerHTML = '<span class="n">' + (isDrop ? '↓' : '') + '</span>' +
+      '<input type="number" inputmode="decimal" min="0" step="any" aria-label="' + (isDrop ? 'Drop weight' : 'Weight') + '" placeholder="0">' +
+      '<input type="number" inputmode="numeric" min="1" step="1" aria-label="' + (isDrop ? 'Drop reps' : 'Reps') + '" placeholder="0">' +
+      '<button type="button" class="icon" aria-label="' + (isDrop ? 'Remove drop' : 'Remove set') + '">✕</button>';
+    var inputs = div.querySelectorAll('input');
+    if (w !== undefined) inputs[0].value = w;
+    if (r !== undefined) inputs[1].value = r;
+    return div;
+  }
+  function addDrop(list, w, r) {
+    var row = makeRow(true, w, r);
+    row.querySelector('button').onclick = function () { row.remove(); renumber(); };
+    list.appendChild(row);
+    renumber();
+    return row;
+  }
+  function addSetRow(w, r, drops, at) {
+    var block = document.createElement('div');
+    block.className = 'setblock';
+    block.dataset.at = at ? String(at) : '';
+    var main = makeRow(false, w, r);
+    var list = document.createElement('div');
+    var foot = document.createElement('div');
+    foot.className = 'setfoot';
+    var done = document.createElement('button');
+    done.type = 'button'; done.className = 'donebtn';
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'dropbtn'; btn.textContent = '+ Drop weight';
+    main.querySelector('button').onclick = function () {
+      if ($('sets').children.length > 1) { block.remove(); renumber(); }
+    };
+    // A set's time is stamped when you tap Done (tap again to move it to now),
+    // or automatically the first time you change its weight or reps.
+    done.onclick = function () { block.dataset.at = String(Date.now()); renumber(); };
+    main.addEventListener('change', function () {
+      if (!block.dataset.at && readRow(main)) { block.dataset.at = String(Date.now()); renumber(); }
+    });
+    btn.onclick = function () { addDrop(list).querySelector('input').focus(); };
+    foot.appendChild(done); foot.appendChild(btn);
+    block.appendChild(main); block.appendChild(list); block.appendChild(foot);
+    $('sets').appendChild(block);
+    (drops || []).forEach(function (d) { addDrop(list, d.w, d.r); });
+    renumber();
+    return block;
+  }
+  function renumber() {
+    var prevAt = 0;
+    Array.prototype.forEach.call($('sets').children, function (block, i) {
+      block.firstElementChild.querySelector('.n').textContent = i + 1;
+      Array.prototype.forEach.call(block.querySelectorAll('.set'), function (row, j) {
+        var inp = row.querySelectorAll('input'), sfx = i + (j ? '-d' + j : '');
+        inp[0].id = 'set-w-' + sfx; inp[1].id = 'set-r-' + sfx;
+      });
+      var at = +block.dataset.at || 0, done = block.querySelector('.donebtn');
+      done.classList.toggle('stamped', !!at);
+      done.textContent = at ? '✓ ' + fmtClock(at) + (prevAt && at >= prevAt ? ' · rest ' + fmtDur(at - prevAt) : '') : '✓ Done';
+      done.setAttribute('aria-label', at ? 'Set ' + (i + 1) + ' done at ' + fmtClock(at) + '. Tap to change it to now.' : 'Mark set ' + (i + 1) + ' done now');
+      if (at) prevAt = at;
+    });
+    saveDraft();
+    updateTimer();
+  }
+  // Live rest timer: time since the most recent timed set, in the form or saved today.
+  function updateTimer() {
+    var last = 0, td = today();
+    Array.prototype.forEach.call($('sets').children, function (b) { last = Math.max(last, +b.dataset.at || 0); });
+    state.entries.forEach(function (e) {
+      if (e.date === td) e.sets.forEach(function (s) { if (s.at) last = Math.max(last, s.at); });
+    });
+    var gap = Date.now() - last;
+    $('resttimer').textContent = last && gap >= 0 && gap < 3 * 3600000 ? 'Resting ' + fmtDur(gap) + ' since your last set' : '';
+  }
+  function saveDraft() {
+    if (!draftReady) return;
+    try {
+      localStorage.setItem(DKEY, JSON.stringify({ date: $('date').value, exercise: $('exercise').value,
+        sets: Array.prototype.map.call($('sets').children, function (b) {
+          var rows = Array.prototype.map.call(b.querySelectorAll('.set'), function (row) {
+            var i = row.querySelectorAll('input');
+            return { w: i[0].value, r: i[1].value };
+          });
+          return { w: rows[0].w, r: rows[0].r, at: +b.dataset.at || 0, d: rows.slice(1) };
+        }) }));
+    } catch (e) {}
+  }
+  function loadDraft() {
+    var d;
+    try { d = JSON.parse(localStorage.getItem(DKEY)); } catch (e) { return false; }
+    if (!d || !Array.isArray(d.sets) || !d.sets.length) return false;
+    var filled = d.exercise || d.sets.some(function (s) { return s && (s.w || s.r || s.at); });
+    if (!filled) return false;
+    if (typeof d.date === 'string') $('date').value = d.date;
+    pendingEx = String(d.exercise || '');
+    $('sets').innerHTML = '';
+    d.sets.forEach(function (s) {
+      s = s || {};
+      addSetRow(s.w, s.r, Array.isArray(s.d) ? s.d : [], typeof s.at === 'number' ? s.at : 0);
+    });
+    return true;
+  }
+  // null = blank row, false = invalid, otherwise {w, r}
+  function readRow(row) {
+    var i = row.querySelectorAll('input');
+    if (i[0].value === '' && i[1].value === '') return null;
+    var w = parseFloat(i[0].value || '0'), r = parseInt(i[1].value, 10);
+    return (w >= 0 && r >= 1) ? { w: w, r: r } : false;
+  }
+  function resetSets() { $('sets').innerHTML = ''; addSetRow(); }
+
+  function showLastTime() {
+    var name = canonical($('exercise').value.trim());
+    var date = $('date').value;
+    var prev = state.entries.filter(function (e) { return e.exercise === name && e.date < date; })
+      .sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0];
+    $('lasttime').textContent = prev ? 'Last time (' + fmtDate(prev.date, true) + '): ' + setsText(prev.sets) + ' ' + state.unit : '';
+  }
+
+  function save() {
+    var name = $('exercise').value.trim();
+    var date = $('date').value;
+    if (!date) return say($('msg'), 'Pick a date.', false);
+    if (!name) return say($('msg'), 'Enter an exercise name.', false);
+    var sets = [], bad = false;
+    Array.prototype.forEach.call($('sets').children, function (block) {
+      var parts = [];
+      Array.prototype.forEach.call(block.querySelectorAll('.set'), function (row) {
+        var v = readRow(row);
+        if (v === false) bad = true; else if (v) parts.push(v);
+      });
+      if (!parts.length) return; // blank set, skip
+      var s = parts[0];
+      if (parts.length > 1) s.d = parts.slice(1);
+      if (+block.dataset.at) s.at = +block.dataset.at;
+      sets.push(s);
+    });
+    if (bad) return say($('msg'), 'Each set and drop needs reps of 1 or more (weight can be 0 for bodyweight).', false);
+    if (!sets.length) return say($('msg'), 'Add at least one set.', false);
+    name = canonical(name);
+    var entry = { id: newId(), date: date, exercise: name, t: Date.now(), sets: sets };
+    $('save').disabled = true;
+    storeAdd(entry).then(function () {
+      say($('msg'), 'Saved ' + name + '.', true);
+      $('exercise').value = '';
+      resetSets();
+    }, function (e) {
+      if (e && e.code === 'local') {
+        say($('msg'), 'Saved for now, but this browser is blocking storage, so it will be lost when you close the page.', false);
+        $('exercise').value = ''; resetSets();
+      } else say($('msg'), "Couldn't save. " + why(e), false);
+    }).then(function () { $('save').disabled = false; renderAll(); });
+  }
+
+  function entryHtml(e) {
+    var first = e.sets.filter(function (s) { return s.at; })[0];
+    return '<div class="entry"><div class="body"><div class="name">' + esc(e.exercise) +
+      (first ? '<span class="when"> · ' + esc(fmtClock(first.at)) + '</span>' : '') + '</div>' +
+      '<div class="sets">' + esc(setsText(e.sets, true)) + ' ' + state.unit + '</div></div>' +
+      '<button type="button" class="icon" data-del="' + esc(e.id) + '" aria-label="Delete ' + esc(e.exercise) + '">✕</button></div>';
+  }
+  function renderSession() {
+    var date = $('date').value;
+    var list = state.entries.filter(function (e) { return e.date === date; });
+    $('sessiontitle').textContent = date === today() ? "Today's session" : 'Session on ' + (date ? fmtDate(date, true) : '—');
+    $('session').innerHTML = list.length ? list.map(entryHtml).join('')
+      : '<div class="empty">' + (mode ? 'Nothing logged for this day yet. Add an exercise above and it shows up here.' : 'Loading your workouts…') + '</div>';
+  }
+
+  /* ---------- History tab ---------- */
+  function renderHistory() {
+    var byDate = {};
+    state.entries.forEach(function (e) { (byDate[e.date] = byDate[e.date] || []).push(e); });
+    var dates = Object.keys(byDate).sort().reverse();
+    $('history').innerHTML = dates.length ? dates.map(function (d) {
+      return '<div class="card"><div class="day">' + esc(fmtDate(d)) + '</div>' + byDate[d].map(entryHtml).join('') + '</div>';
+    }).join('') : '<div class="card"><div class="empty">No workouts yet. Log your first one in the Log tab.</div></div>';
+  }
+
+  /* ---------- Progress tab ---------- */
+  function sessionsFor(name) {
+    var byDate = {};
+    state.entries.forEach(function (e) {
+      if (e.exercise !== name) return;
+      var s = byDate[e.date] = byDate[e.date] || { date: e.date, top: 0, orm: 0, vol: 0 };
+      e.sets.forEach(function (set) {
+        segs(set).forEach(function (x) {
+          s.top = Math.max(s.top, x.w); s.orm = Math.max(s.orm, orm(x)); s.vol += x.w * x.r;
+        });
+      });
+    });
+    return Object.keys(byDate).sort().map(function (d) { return byDate[d]; });
+  }
+  function niceStep(range) {
+    var raw = range / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+  }
+  function renderChart(pts, key) {
+    if (!pts.length) { $('chart').innerHTML = '<div class="empty">No data for this exercise yet.</div>'; return; }
+    var W = 600, H = 260, L = 52, R = 16, T = 14, B = 30;
+    var vals = pts.map(function (p) { return p[key]; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi === lo) { lo = Math.max(0, lo - 5); hi = hi + 5; }
+    var step = niceStep(hi - lo);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    var t = pts.map(function (p) { return new Date(p.date + 'T00:00:00').getTime(); });
+    var t0 = t[0], t1 = t[t.length - 1];
+    var x = function (i) { return t1 === t0 ? (L + W - R) / 2 : L + (t[i] - t0) / (t1 - t0) * (W - L - R); };
+    var y = function (v) { return T + (hi - v) / (hi - lo) * (H - T - B); };
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Progress chart">';
+    for (var v = lo; v <= hi + step / 2; v += step) {
+      s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)"/>' +
+        '<text x="' + (L - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + num(v) + '</text>';
+    }
+    var d = pts.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p[key]).toFixed(1); }).join(' ');
+    s += '<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    pts.forEach(function (p, i) {
+      s += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p[key]).toFixed(1) + '" r="4.5" fill="var(--accent)" stroke="var(--card)" stroke-width="2">' +
+        '<title>' + esc(fmtDate(p.date, true)) + ': ' + num(p[key]) + ' ' + state.unit + '</title></circle>';
+    });
+    s += '<text x="' + (pts.length === 1 ? x(0) : L) + '" y="' + (H - 8) + '" text-anchor="' + (pts.length === 1 ? 'middle' : 'start') + '">' + esc(fmtDate(pts[0].date, true)) + '</text>';
+    if (pts.length > 1) s += '<text x="' + (W - R) + '" y="' + (H - 8) + '" text-anchor="end">' + esc(fmtDate(pts[pts.length - 1].date, true)) + '</text>';
+    $('chart').innerHTML = s + '</svg>';
+  }
+  function renderProgress() {
+    var names = exerciseNames(), sel = $('pex'), cur = sel.value;
+    sel.innerHTML = names.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('');
+    if (names.indexOf(cur) >= 0) sel.value = cur;
+    var pts = names.length ? sessionsFor(sel.value) : [];
+    var key = $('metric').value;
+    if (pts.length) {
+      var first = pts[0][key], last = pts[pts.length - 1][key], diff = last - first;
+      $('tiles').innerHTML =
+        '<div class="tile"><div class="v">' + num(last) + '</div><div class="k">Latest (' + state.unit + ')</div></div>' +
+        '<div class="tile"><div class="v">' + num(Math.max.apply(null, pts.map(function (p) { return p[key]; }))) + '</div><div class="k">Best (' + state.unit + ')</div></div>' +
+        '<div class="tile"><div class="v">' + (diff > 0 ? '+' : '') + num(diff) + '</div><div class="k">Change over ' + pts.length + ' session' + (pts.length === 1 ? '' : 's') + '</div></div>';
+    } else $('tiles').innerHTML = '';
+    if (names.length) renderChart(pts, key);
+    else $('chart').innerHTML = '<div class="empty">Your chart appears here once you log a workout: top weight, estimated 1RM or total volume for each exercise.</div>';
+
+    $('prs').innerHTML = names.length ? '<table><thead><tr><th>Exercise</th><th class="num">Best set</th><th class="num">Est. 1RM</th></tr></thead><tbody>' +
+      names.map(function (n) {
+        var best = null, bestOrm = 0;
+        state.entries.forEach(function (e) {
+          if (e.exercise !== n) return;
+          e.sets.forEach(function (set) {
+            segs(set).forEach(function (x) {
+              if (!best || x.w > best.w || (x.w === best.w && x.r > best.r)) best = x;
+              bestOrm = Math.max(bestOrm, orm(x));
+            });
+          });
+        });
+        return '<tr><td>' + esc(n) + '</td><td class="num">' + num(best.w) + '×' + best.r + '</td><td class="num">' + num(bestOrm) + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<div class="empty">Your heaviest set for each exercise is listed here.</div>';
+  }
+
+  /* ---------- Exercises tab ---------- */
+  function renderExerciseSelect() {
+    var sel = $('exercise'), cur = pendingEx || sel.value;
+    pendingEx = '';
+    var list = exerciseList().slice();
+    if (cur && cur !== '__add' && list.indexOf(cur) < 0) list.push(cur);
+    list.sort(byName);
+    sel.innerHTML = '<option value="">Choose an exercise</option>' +
+      list.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('') +
+      '<option value="__add">+ Add a new exercise…</option>';
+    sel.value = cur && cur !== '__add' ? cur : '';
+    lastEx = sel.value;
+  }
+  function renderExerciseList() {
+    var list = exerciseList().slice().sort(byName), counts = {};
+    state.entries.forEach(function (e) { counts[e.exercise] = (counts[e.exercise] || 0) + 1; });
+    $('exlistview').innerHTML = list.length ? list.map(function (n) {
+      return '<div class="entry"><div class="body"><div class="name">' + esc(n) + '</div>' +
+        '<div class="sets">' + (counts[n] ? counts[n] + ' logged' : 'Not logged yet') + '</div></div>' +
+        '<button type="button" class="icon" data-delex="' + esc(n) + '" aria-label="Remove ' + esc(n) + '">✕</button></div>';
+    }).join('') : '<div class="empty">No exercises yet. Add one above.</div>';
+  }
+  function addExercise() {
+    var name = $('newex').value.trim().replace(/\s+/g, ' ');
+    if (!name) return say($('exmsg'), 'Type an exercise name first.', false);
+    var list = exerciseList();
+    var dup = list.filter(function (n) { return n.toLowerCase() === name.toLowerCase(); })[0];
+    if (dup) return say($('exmsg'), dup + ' is already in your list.', false);
+    $('addex').disabled = true;
+    storeExercises(list.concat([name])).then(function () {
+      $('newex').value = '';
+      if (returnToLog) {
+        returnToLog = false;
+        pendingEx = name;
+        renderAll();
+        showTab('log');
+        saveDraft();
+        say($('exmsg'), '', true);
+      } else {
+        say($('exmsg'), 'Added ' + name + '. It is now in the Log dropdown.', true);
+        renderAll();
+      }
+    }, function (e) {
+      say($('exmsg'), "Couldn't add. " + why(e), false);
+    }).then(function () { $('addex').disabled = false; });
+  }
+
+  function renderAll() {
+    renderExerciseSelect();
+    renderExerciseList();
+    Array.prototype.forEach.call(document.querySelectorAll('.u'), function (el) { el.textContent = state.unit; });
+    renderSession(); renderHistory(); renderProgress(); showLastTime();
+    if (mode) backupStatus();
+  }
+
+  /* ---------- Events ---------- */
+  function showTab(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (x) {
+      var on = x.dataset.tab === name;
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
+      $('tab-' + x.dataset.tab).hidden = !on;
+    });
+    window.scrollTo(0, 0);
+  }
+  document.querySelector('nav').onclick = function (ev) {
+    var b = ev.target.closest('button'); if (!b) return;
+    returnToLog = false;
+    showTab(b.dataset.tab);
+  };
+  // Delete takes two taps: the first arms the button, the second removes the entry.
+  document.querySelector('main').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-del],[data-delex]'); if (!b) return;
+    if (!b.classList.contains('armed')) {
+      b.classList.add('armed'); b.textContent = 'Delete?';
+      setTimeout(function () { if (b.isConnected) { b.classList.remove('armed'); b.textContent = '✕'; } }, 4000);
+      return;
+    }
+    b.disabled = true;
+    if (b.hasAttribute('data-delex')) {
+      var gone = b.dataset.delex;
+      storeExercises(exerciseList().filter(function (n) { return n !== gone; })).then(renderAll, function (e) {
+        b.disabled = false;
+        say($('exmsg'), "Couldn't remove. " + why(e), false);
+      });
+      return;
+    }
+    storeRemove(b.dataset.del).then(renderAll, function (e) {
+      b.disabled = false;
+      say($('msg'), "Couldn't delete. " + why(e), false); say($('bmsg'), "Couldn't delete. " + why(e), false);
+    });
+  });
+  $('addset').onclick = function () {
+    // Copy the previous set, drops included, since sets are usually repeated.
+    var last = $('sets').lastElementChild, w, r, drops = [];
+    if (last) {
+      var i = last.firstElementChild.querySelectorAll('input');
+      w = i[0].value; r = i[1].value;
+      Array.prototype.forEach.call(last.querySelectorAll('.drop'), function (row) {
+        var j = row.querySelectorAll('input');
+        drops.push({ w: j[0].value, r: j[1].value });
+      });
+    }
+    addSetRow(w, r, drops).querySelector('input').focus();
+  };
+  $('save').onclick = save;
+  $('tab-log').addEventListener('input', saveDraft);
+  $('exercise').onchange = function () {
+    if ($('exercise').value === '__add') {
+      // "+ Add a new exercise…" jumps to the Exercises tab, then back here with the new name selected.
+      $('exercise').value = lastEx;
+      saveDraft();
+      returnToLog = true;
+      showTab('exercises');
+      $('newex').focus();
+      return;
+    }
+    lastEx = $('exercise').value;
+    showLastTime();
+    saveDraft();
+  };
+  $('addex').onclick = addExercise;
+  $('newex').onkeydown = function (ev) { if (ev.key === 'Enter') addExercise(); };
+  $('date').onchange = function () { renderSession(); showLastTime(); };
+  $('pex').onchange = renderProgress;
+  $('metric').onchange = renderProgress;
+  $('unit').onchange = function () {
+    storeUnit($('unit').value).catch(function () {});
+    renderAll();
+  };
+
+  $('export').onclick = function () {
+    var data = JSON.stringify({ unit: state.unit, exercises: exerciseList(), entries: state.entries }, null, 2);
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    a.download = 'gym-log-' + today() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
+    try { localStorage.setItem(BKEY, String(Date.now())); } catch (e) {}
+    say($('bmsg'), 'Exported ' + state.entries.length + ' entries to your Downloads folder. Copy the file somewhere safe, like Google Drive.', true);
+    backupStatus();
+  };
+  $('import').onclick = function () { $('file').click(); };
+  $('file').onchange = function () {
+    var f = $('file').files[0]; if (!f) return;
+    var reader = new FileReader();
+    reader.onload = async function () {
+      $('file').value = '';
+      var list, fileEx = [];
+      try {
+        var data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.entries) || !data.entries.every(validEntry)) throw new Error('bad');
+        list = data.entries;
+        if (Array.isArray(data.exercises)) fileEx = data.exercises.filter(function (n) { return typeof n === 'string' && n.trim(); });
+      } catch (e) { return say($('bmsg'), "That file isn't a Gym Log export.", false); }
+      // Bring over the file's exercise list too, adding names this phone doesn't have yet.
+      if (fileEx.length) {
+        var mine = exerciseList().slice(), seen = {};
+        mine.forEach(function (n) { seen[n.toLowerCase()] = 1; });
+        fileEx.forEach(function (n) { if (!seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; mine.push(n); } });
+        storeExercises(mine);
+      }
+      // Import adds to what is here; entries already present (same id) are skipped.
+      var have = {};
+      state.entries.forEach(function (e) { have[e.id] = 1; });
+      var added = 0;
+      $('import').disabled = true;
+      try {
+        for (var i = 0; i < list.length; i++) {
+          var id = /^[A-Za-z0-9_-]{1,40}$/.test(String(list[i].id || '')) ? String(list[i].id) : newId();
+          if (have[id]) continue;
+          have[id] = 1;
+          say($('bmsg'), 'Importing ' + (added + 1) + '…', true);
+          await storeAdd(clean(list[i], id));
+          added++;
+        }
+        say($('bmsg'), 'Imported ' + added + ' new entr' + (added === 1 ? 'y' : 'ies') + '.', true);
+      } catch (e) {
+        say($('bmsg'), 'Import stopped after ' + added + ' entries. ' + why(e), false);
+      }
+      $('import').disabled = false;
+      sortEntries(); renderAll();
+    };
+    reader.readAsText(f);
+  };
+
+  /* ---------- Init ---------- */
+  $('date').value = today();
+  if (!loadDraft()) resetSets();
+  renderAll();
+  draftReady = true;
+  saveDraft();
+  init();
+  setInterval(updateTimer, 1000);
+  // The service worker keeps a copy of the app so it opens with no internet.
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+})();
+</script>
+</body>
+</html>
