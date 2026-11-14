@@ -12,7 +12,7 @@
   :root {
     --bg: #eef0f4; --card: #ffffff; --text: #14171f; --muted: #626b7c;
     --line: #dde1e9; --accent: #1f5fd6; --accent-text: #ffffff;
-    --danger: #c62828; --good: #18794e; --warn: #9a5b00; --field: #f6f7fa;
+    --danger: #c62828; --good: #18794e; --warn: #9a5b00; --field: #f6f7fa; --pr: #a86a00;
     --body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --display: "Space Grotesk", "Inter", system-ui, sans-serif;
     color-scheme: light;
@@ -21,14 +21,14 @@
     :root:not([data-theme="light"]) {
       --bg: #0e1116; --card: #181c24; --text: #e9ecf2; --muted: #98a1b2;
       --line: #2a303b; --accent: #6b9bf5; --accent-text: #0e1116;
-      --danger: #ff8a80; --good: #5fd39a; --warn: #f0b860; --field: #11141a;
+      --danger: #ff8a80; --good: #5fd39a; --warn: #f0b860; --field: #11141a; --pr: #f2c14e;
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0e1116; --card: #181c24; --text: #e9ecf2; --muted: #98a1b2;
     --line: #2a303b; --accent: #6b9bf5; --accent-text: #0e1116;
-    --danger: #ff8a80; --good: #5fd39a; --warn: #f0b860; --field: #11141a;
+    --danger: #ff8a80; --good: #5fd39a; --warn: #f0b860; --field: #11141a; --pr: #f2c14e;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -91,6 +91,38 @@
     background: var(--field); border: 1px solid var(--accent); border-radius: 10px; padding: 6px 6px 6px 12px; margin-bottom: 12px; }
   .editbar span { min-width: 0; overflow-wrap: anywhere; }
   .entry.editing .name { color: var(--accent); }
+  /* History: view switch, per-exercise overview and detail */
+  .seg { display: flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--field);
+    border: 1px solid var(--line); border-radius: 12px; }
+  .seg button { flex: 1; min-height: 40px; border: 0; background: transparent; color: var(--muted); font-weight: 600; }
+  .seg button[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+  .exrow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 0; text-align: left;
+    background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; color: var(--text); }
+  .card h2 + .exrow { border-top: 0; }
+  .exinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .exinfo .name { font-weight: 600; overflow-wrap: anywhere; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .extrend { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .chev { flex: none; color: var(--muted); font-size: 22px; }
+  .spark { width: 84px; height: 28px; display: block; }
+  .delta { font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .up, .delta.up { color: var(--good); }
+  .down, .delta.down { color: var(--danger); }
+  .backbtn { min-height: 36px; padding: 4px 10px 4px 4px; font-size: 14px; color: var(--accent); border: 0; }
+  .exhead { font: 700 22px/1.2 var(--display); margin: 6px 0 2px; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .chip { min-height: 34px; padding: 4px 12px; font-size: 13px; border-radius: 999px; }
+  .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .sess { padding: 10px 0; border-top: 1px solid var(--line); }
+  .card h2 + .sess { border-top: 0; padding-top: 0; }
+  .sesshead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .sesshead .day { margin: 0; }
+  .sesshead .delta { margin-left: auto; }
+  .sess .entry { padding: 2px 0; border-top: 0; }
+  .pr { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--pr); border: 1px solid var(--pr);
+    border-radius: 6px; padding: 1px 6px; }
+  svg.chart text { font-size: 22px; }
+  svg.chart text.vlabel { fill: var(--text); font-weight: 600; font-size: 24px; }
   .entry .when { font-weight: 400; color: var(--muted); font-size: 13px; }
   .set .n { color: var(--muted); font-size: 14px; text-align: center; font-variant-numeric: tabular-nums; }
   .sethead { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
@@ -164,6 +196,10 @@
   </section>
 
   <section id="tab-history" hidden>
+    <div class="seg" role="group" aria-label="View history">
+      <button type="button" id="hv-date" data-hv="date" aria-pressed="true">By date</button>
+      <button type="button" id="hv-exercise" data-hv="exercise" aria-pressed="false">By exercise</button>
+    </div>
     <div id="history"></div>
     <div class="card">
       <h2>Backup</h2>
@@ -686,7 +722,120 @@
   }
 
   /* ---------- History tab ---------- */
+  var VKEY = 'gymlog.histView';
+  var histView = 'date', histEx = null, histMetric = 'orm', histRange = 'all';
+  try { if (localStorage.getItem(VKEY) === 'exercise') histView = 'exercise'; } catch (e) {}
+  var METRICS = { orm: 'Est. 1RM', top: 'Top weight', vol: 'Volume', reps: 'Max reps' };
+  var RANGES = { '1m': ['1M', 30], '3m': ['3M', 91], '1y': ['1Y', 365], all: ['All', 0] };
+  function metricUnit(key) { return key === 'reps' ? 'reps' : state.unit; }
+  // Bodyweight exercises (weight always 0) are tracked by reps; everything else by estimated 1RM.
+  function defaultMetric(pts) { return pts.every(function (p) { return p.top === 0; }) ? 'reps' : 'orm'; }
+  function signed(v) { return (v > 0 ? '+' : v < 0 ? '−' : '±') + num(Math.abs(v)); }
+  function trendClass(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
+  function fmtSet(s) { return s.w === 0 ? s.r + ' reps' : num(s.w) + '×' + s.r; }
+  function isoDate(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function bestSet(name) {
+    var best = null;
+    state.entries.forEach(function (e) {
+      if (e.exercise !== name) return;
+      e.sets.forEach(function (set) {
+        segs(set).forEach(function (x) { if (!best || x.w > best.w || (x.w === best.w && x.r > best.r)) best = x; });
+      });
+    });
+    return best;
+  }
+  function sparkline(vals) {
+    if (vals.length < 2) return '<svg class="spark" viewBox="0 0 84 28" aria-hidden="true"><circle cx="42" cy="14" r="3" fill="var(--accent)"/></svg>';
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi === lo) { lo -= 1; hi += 1; }
+    var p = vals.map(function (v, i) { return [2 + i * (80 / (vals.length - 1)), 25 - (v - lo) / (hi - lo) * 22]; });
+    var last = p[p.length - 1];
+    return '<svg class="spark" viewBox="0 0 84 28" aria-hidden="true"><polyline points="' +
+      p.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') +
+      '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="2.8" fill="var(--accent)"/></svg>';
+  }
+  function renderExerciseOverview() {
+    var names = exerciseNames();
+    if (!names.length) {
+      $('history').innerHTML = '<div class="card"><div class="empty">No workouts yet. Log your first one in the Log tab.</div></div>';
+      return;
+    }
+    $('history').innerHTML = grouped(names).map(function (g) {
+      return '<div class="card"><h2>' + esc(g.name) + '</h2>' + g.items.map(function (n) {
+        var pts = sessionsFor(n), key = defaultMetric(pts), vals = pts.map(function (p) { return p[key]; });
+        var diff = vals[vals.length - 1] - vals[0], best = bestSet(n);
+        return '<button type="button" class="exrow" data-hex="' + esc(n) + '">' +
+          '<span class="exinfo"><span class="name">' + esc(n) + '</span>' +
+          '<span class="meta">' + pts.length + ' session' + (pts.length === 1 ? '' : 's') + ' · last ' + esc(fmtDate(pts[pts.length - 1].date, true)) +
+          (best ? ' · best ' + fmtSet(best) : '') + '</span></span>' +
+          '<span class="extrend">' + sparkline(vals.slice(-12)) +
+          (pts.length > 1 ? '<span class="delta ' + trendClass(diff) + '">' + signed(diff) + ' ' + metricUnit(key) + (key === 'orm' ? ' 1RM' : '') + '</span>' : '<span class="delta">1st session</span>') +
+          '</span><span class="chev" aria-hidden="true">›</span></button>';
+      }).join('') + '</div>';
+    }).join('');
+  }
+  function renderExerciseDetail(n) {
+    var all = sessionsFor(n), key = METRICS[histMetric] ? histMetric : defaultMetric(all), unit = metricUnit(key);
+    var days = RANGES[histRange][1], cutoff = '';
+    if (days) { var c = new Date(); c.setDate(c.getDate() - days); cutoff = isoDate(c); }
+    // A PR is a session that beat every earlier session on this measure (the first session is the baseline).
+    var prs = {}, run = -Infinity, change = {};
+    all.forEach(function (p, i) {
+      if (i > 0 && p[key] > run) prs[p.date] = 1;
+      if (i > 0) change[p.date] = p[key] - all[i - 1][key];
+      run = Math.max(run, p[key]);
+    });
+    var pts = all.filter(function (p) { return !cutoff || p.date >= cutoff; });
+    var gid = groupIdOf(n), gname = gid ? groupList().filter(function (g) { return g.id === gid; })[0].name : 'Other';
+    var tile = function (v, k) { return '<div class="tile"><div class="v">' + v + '</div><div class="k">' + k + '</div></div>'; };
+    var tiles = '';
+    if (pts.length) {
+      var vals = pts.map(function (p) { return p[key]; }), latest = vals[vals.length - 1], diff = latest - vals[0];
+      tiles = tile(num(Math.max.apply(null, vals)), 'Best (' + esc(unit) + ')') + tile(num(latest), 'Latest (' + esc(unit) + ')') +
+        tile('<span class="' + trendClass(diff) + '">' + signed(diff) + '</span>', pts.length > 1 ? 'Change over ' + pts.length + ' sessions' : 'Change');
+    }
+    var chips = function (obj, attr, cur) {
+      return Object.keys(obj).map(function (k) {
+        return '<button type="button" class="chip" data-' + attr + '="' + k + '" aria-pressed="' + (k === cur) + '">' + esc(Array.isArray(obj[k]) ? obj[k][0] : obj[k]) + '</button>';
+      }).join('');
+    };
+    var byDate = {};
+    state.entries.forEach(function (e) { if (e.exercise === n) (byDate[e.date] = byDate[e.date] || []).push(e); });
+    var sessions = all.slice().reverse().map(function (p) {
+      var dv = change[p.date];
+      return '<div class="sess"><div class="sesshead"><span class="day">' + esc(fmtDate(p.date)) + '</span>' +
+        (prs[p.date] ? '<span class="pr">PR</span>' : '') +
+        (dv !== undefined ? '<span class="delta ' + trendClass(dv) + '">' + signed(dv) + ' ' + esc(unit) + '</span>' : '') + '</div>' +
+        byDate[p.date].map(function (e) {
+          return '<div class="entry"><div class="body"><div class="sets">' + esc(setsText(e.sets, true)) + ' ' + state.unit + '</div></div>' +
+            '<button type="button" class="icon" data-edit="' + esc(e.id) + '" aria-label="Edit ' + esc(n) + ' on ' + esc(fmtDate(e.date, true)) + '">✎</button>' +
+            '<button type="button" class="icon" data-del="' + esc(e.id) + '" aria-label="Delete ' + esc(n) + ' on ' + esc(fmtDate(e.date, true)) + '">✕</button></div>';
+        }).join('') + '</div>';
+    }).join('');
+    $('history').innerHTML = '<div class="card">' +
+      '<button type="button" class="ghost backbtn" data-hback>‹ All exercises</button>' +
+      '<div class="exhead">' + esc(n) + '</div>' +
+      '<div class="meta">' + esc(gname) + ' · ' + all.length + ' session' + (all.length === 1 ? '' : 's') + ' since ' + esc(fmtDate(all[0].date, true)) + '</div>' +
+      '<div class="chips" role="group" aria-label="Measure">' + chips(METRICS, 'hmetric', key) + '</div>' +
+      (key === 'orm' ? '<p class="hint" style="margin:8px 0 0">Estimated 1-rep max, worked out from your best set each session.</p>' : '') +
+      '<div class="tiles">' + tiles + '</div>' +
+      '<div id="hchart"></div>' +
+      '<div class="chips" role="group" aria-label="Time range">' + chips(RANGES, 'hrange', histRange) + '</div>' +
+      '</div>' +
+      '<div class="card"><h2>Sessions</h2>' + sessions + '</div>';
+    renderChart($('hchart'), pts, key, unit, prs);
+  }
   function renderHistory() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-hv]'), function (b) {
+      b.setAttribute('aria-pressed', b.dataset.hv === histView ? 'true' : 'false');
+    });
+    if (histView === 'exercise') {
+      if (histEx && exerciseNames().indexOf(histEx) < 0) histEx = null; // renamed or all its workouts deleted
+      return histEx ? renderExerciseDetail(histEx) : renderExerciseOverview();
+    }
     var byDate = {};
     state.entries.forEach(function (e) { (byDate[e.date] = byDate[e.date] || []).push(e); });
     var dates = Object.keys(byDate).sort().reverse();
@@ -700,10 +849,10 @@
     var byDate = {};
     state.entries.forEach(function (e) {
       if (e.exercise !== name) return;
-      var s = byDate[e.date] = byDate[e.date] || { date: e.date, top: 0, orm: 0, vol: 0 };
+      var s = byDate[e.date] = byDate[e.date] || { date: e.date, top: 0, orm: 0, vol: 0, reps: 0 };
       e.sets.forEach(function (set) {
         segs(set).forEach(function (x) {
-          s.top = Math.max(s.top, x.w); s.orm = Math.max(s.orm, orm(x)); s.vol += x.w * x.r;
+          s.top = Math.max(s.top, x.w); s.orm = Math.max(s.orm, orm(x)); s.vol += x.w * x.r; s.reps = Math.max(s.reps, x.r);
         });
       });
     });
@@ -713,9 +862,11 @@
     var raw = range / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
   }
-  function renderChart(pts, key) {
-    if (!pts.length) { $('chart').innerHTML = '<div class="empty">No data for this exercise yet.</div>'; return; }
-    var W = 600, H = 260, L = 52, R = 16, T = 14, B = 30;
+  // Line chart of one measure per session: area fill, gold dots for PR sessions, latest value labelled.
+  function renderChart(el, pts, key, unit, prs) {
+    if (!pts.length) { el.innerHTML = '<div class="empty">No sessions in this period.</div>'; return; }
+    // Drawn at 600 wide and scaled to the screen, so text sizes here are about twice what shows on a phone.
+    var W = 600, H = 300, L = 70, R = 24, T = 44, B = 48;
     var vals = pts.map(function (p) { return p[key]; });
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     if (hi === lo) { lo = Math.max(0, lo - 5); hi = hi + 5; }
@@ -725,20 +876,26 @@
     var t0 = t[0], t1 = t[t.length - 1];
     var x = function (i) { return t1 === t0 ? (L + W - R) / 2 : L + (t[i] - t0) / (t1 - t0) * (W - L - R); };
     var y = function (v) { return T + (hi - v) / (hi - lo) * (H - T - B); };
-    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Progress chart">';
+    var s = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Progress chart">';
     for (var v = lo; v <= hi + step / 2; v += step) {
       s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)"/>' +
-        '<text x="' + (L - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + num(v) + '</text>';
+        '<text x="' + (L - 12) + '" y="' + (y(v) + 8) + '" text-anchor="end">' + num(v) + '</text>';
     }
-    var d = pts.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p[key]).toFixed(1); }).join(' ');
+    var n = pts.length, d = pts.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p[key]).toFixed(1); }).join(' ');
+    if (n > 1) {
+      s += '<path d="' + d + ' L' + x(n - 1).toFixed(1) + ' ' + (H - B) + ' L' + x(0).toFixed(1) + ' ' + (H - B) + ' Z" fill="var(--accent)" fill-opacity="0.12"/>';
+    }
     s += '<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
     pts.forEach(function (p, i) {
-      s += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p[key]).toFixed(1) + '" r="4.5" fill="var(--accent)" stroke="var(--card)" stroke-width="2">' +
-        '<title>' + esc(fmtDate(p.date, true)) + ': ' + num(p[key]) + ' ' + state.unit + '</title></circle>';
+      var isPr = prs && prs[p.date];
+      s += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p[key]).toFixed(1) + '" r="' + (isPr ? 9 : 7) + '" fill="' + (isPr ? 'var(--pr)' : 'var(--accent)') + '" stroke="var(--card)" stroke-width="2">' +
+        '<title>' + esc(fmtDate(p.date, true)) + ': ' + num(p[key]) + ' ' + unit + (isPr ? ' (PR)' : '') + '</title></circle>';
     });
-    s += '<text x="' + (pts.length === 1 ? x(0) : L) + '" y="' + (H - 8) + '" text-anchor="' + (pts.length === 1 ? 'middle' : 'start') + '">' + esc(fmtDate(pts[0].date, true)) + '</text>';
-    if (pts.length > 1) s += '<text x="' + (W - R) + '" y="' + (H - 8) + '" text-anchor="end">' + esc(fmtDate(pts[pts.length - 1].date, true)) + '</text>';
-    $('chart').innerHTML = s + '</svg>';
+    var lx = x(n - 1), anchor = lx > W - 100 ? 'end' : lx < L + 60 ? 'start' : 'middle';
+    s += '<text class="vlabel" x="' + lx.toFixed(1) + '" y="' + (y(pts[n - 1][key]) - 18).toFixed(1) + '" text-anchor="' + anchor + '">' + num(pts[n - 1][key]) + ' ' + esc(unit) + '</text>';
+    s += '<text x="' + (n === 1 ? x(0) : L) + '" y="' + (H - 10) + '" text-anchor="' + (n === 1 ? 'middle' : 'start') + '">' + esc(fmtDate(pts[0].date, true)) + '</text>';
+    if (n > 1) s += '<text x="' + (W - R) + '" y="' + (H - 10) + '" text-anchor="end">' + esc(fmtDate(pts[n - 1].date, true)) + '</text>';
+    el.innerHTML = s + '</svg>';
   }
   function renderProgress() {
     var names = exerciseNames(), sel = $('pex'), cur = sel.value;
@@ -753,7 +910,7 @@
         '<div class="tile"><div class="v">' + num(Math.max.apply(null, pts.map(function (p) { return p[key]; }))) + '</div><div class="k">Best (' + state.unit + ')</div></div>' +
         '<div class="tile"><div class="v">' + (diff > 0 ? '+' : '') + num(diff) + '</div><div class="k">Change over ' + pts.length + ' session' + (pts.length === 1 ? '' : 's') + '</div></div>';
     } else $('tiles').innerHTML = '';
-    if (names.length) renderChart(pts, key);
+    if (names.length) renderChart($('chart'), pts, key, state.unit, null);
     else $('chart').innerHTML = '<div class="empty">Your chart appears here once you log a workout: top weight, estimated 1RM or total volume for each exercise.</div>';
 
     $('prs').innerHTML = names.length ? '<table><thead><tr><th>Exercise</th><th class="num">Best set</th><th class="num">Est. 1RM</th></tr></thead><tbody>' +
@@ -1078,6 +1235,23 @@
   });
   $('date').onchange = function () { renderSession(); showLastTime(); };
   $('pex').onchange = renderProgress;
+  $('tab-history').addEventListener('click', function (ev) {
+    var t = ev.target.closest('[data-hv]');
+    if (t) {
+      histView = t.dataset.hv; histEx = null;
+      try { localStorage.setItem(VKEY, histView); } catch (e) {}
+      return renderHistory();
+    }
+    if ((t = ev.target.closest('[data-hex]'))) {
+      histEx = t.dataset.hex;
+      histMetric = defaultMetric(sessionsFor(histEx));
+      renderHistory();
+      return window.scrollTo(0, 0);
+    }
+    if (ev.target.closest('[data-hback]')) { histEx = null; return renderHistory(); }
+    if ((t = ev.target.closest('[data-hmetric]'))) { histMetric = t.dataset.hmetric; return renderHistory(); }
+    if ((t = ev.target.closest('[data-hrange]'))) { histRange = t.dataset.hrange; return renderHistory(); }
+  });
   $('metric').onchange = renderProgress;
   $('unit').onchange = function () {
     storeUnit($('unit').value).catch(function () {});
